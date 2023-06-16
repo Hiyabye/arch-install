@@ -14,21 +14,28 @@ station wlan0 connect <SSID>
 exit
 ```
 
-3. Download and run the `install.sh` script.
+3. Install dependencies.
+  
+```bash 
+pacman -Sy --noconfirm --needed git
+```
+
+4. Download and run the `install.sh` script.
 
 ```bash
-curl -L https://github.com/Hiyabye/arch-install/install.sh -o install.sh
+git clone https://github.com/Hiyabye/arch-install.git
+cd arch-install
 chmod +x install.sh
 ./install.sh
 ```
 
-4. After the script finishes, reboot the system.
+5. After the script finishes, reboot the system.
 
 ```bash
 shutdown now
 ```
 
-5. Remove the installation media and boot into the new system.
+6. Remove the installation media and boot into the new system.
 
 ```bash
 # After logging in as the new user

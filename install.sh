@@ -1,17 +1,9 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-# Validate dependencies
+# Check dependencies
 check_dependency() {
   command -v "$1" >/dev/null 2>&1 || { echo >&2 "$1 is required but not installed. Aborting."; exit 1; }
-}
-
-validate_dependencies() {
-  check_dependency timedatectl
-  check_dependency dialog
-  check_dependency lsblk
-  check_dependency parted
-  check_dependency wipefs
 }
 
 # Colors
@@ -24,15 +16,6 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 
-# Trap function for cleanup and error handling
-cleanup() {
-  trap - SIGINT SIGTERM ERR EXIT
-  # Script cleanup here
-  # Add any additional cleanup steps if necessary
-}
-
-trap cleanup SIGINT SIGTERM ERR EXIT
-
 # Function to print messages with color
 msg() {
   echo >&2 -e "${1-}"
@@ -44,11 +27,13 @@ msg
 
 # 1. Prepare environment
 
-# 1.1. Validate dependencies
-validate_dependencies
-
-# 1.2. Update system clock
+# 1.1. Update system clock
+msg "${BLUE}Updating system clock...${NOFORMAT}"
 timedatectl set-ntp true
+
+# 1.2. Install dependencies
+msg "${BLUE}Installing dependencies...${NOFORMAT}"
+pacman -Sy --noconfirm --needed reflector
 
 # 1.3. Print warning
 msg "${YELLOW}WARNING: This script will remove all existing data on the disk${NOFORMAT}"
@@ -56,62 +41,76 @@ msg "${YELLOW}WARNING: This script is experimental and is not verified${NOFORMAT
 msg "${YELLOW}WARNING: This script is not intended for use in production${NOFORMAT}"
 msg
 
+# 1.4. Update mirror list
+msg "${BLUE}Updating mirror list...${NOFORMAT}"
+reflector --latest 200 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+
 # 2. User credentials
 
 # 2.1. Hostname
-hostname=$(dialog --stdout --inputbox "Enter hostname" 0 0) || exit 1
+read -p "Enter hostname: " hostname
 [[ -n "$hostname" ]] || { echo "Hostname cannot be empty"; exit 1; }
 
 # 2.2. Root password
-root_password=$(dialog --stdout --passwordbox "Enter admin password" 0 0) || exit 1
+read -rps "Enter admin password: " root_password
 [[ -n "$root_password" ]] || { echo "Admin password cannot be empty"; exit 1; }
-root_password2=$(dialog --stdout --passwordbox "Enter admin password again" 0 0) || exit 1
+read -rps "Enter admin password again: " root_password2
 [[ "$root_password" == "$root_password2" ]] || { echo "Passwords do not match"; exit 1; }
 
 # 2.3. Username
-username=$(dialog --stdout --inputbox "Enter username" 0 0) || exit 1
+read -p "Enter username: " username
 [[ -n "$username" ]] || { echo "Username cannot be empty"; exit 1; }
 
 # 2.4. User password
-user_password=$(dialog --stdout --passwordbox "Enter user password" 0 0) || exit 1
+read -rps "Enter user password: " user_password
 [[ -n "$user_password" ]] || { echo "User password cannot be empty"; exit 1; }
-user_password2=$(dialog --stdout --passwordbox "Enter user password again" 0 0) || exit 1
+read -rps "Enter user password again: " user_password2
 [[ "$user_password" == "$user_password2" ]] || { echo "Passwords do not match"; exit 1; }
 
 # 2.5. Timezone
-msg "${BLUE}Available timezones:${NOFORMAT}"
 timezones=$(timedatectl list-timezones)
-timezone=$(dialog --stdout --menu "Select timezone" 0 0 0 $timezones) || exit 1
+msg "${BLUE}Available timezones:${NOFORMAT}"
+echo "$timezones" | nl
+read -p "Enter timezone: " timezone
+[[ -n "$timezone" ]] || { echo "Timezone cannot be empty"; exit 1; }
 
 # 2.6. Locale
-msg "${BLUE}Available locales:${NOFORMAT}"
 locales=$(cat /etc/locale.gen | grep -v "#")
-locale=$(dialog --stdout --menu "Select locale" 0 0 0 $locales) || exit 1
+msg "${BLUE}Available locales:${NOFORMAT}"
+echo "$locales" | nl
+read -p "Enter locale: " locale
+[[ -n "$locale" ]] || { echo "Locale cannot be empty"; exit 1; }
 
 # 2.7. Keymap
-msg "${BLUE}Available keymaps:${NOFORMAT}"
 keymaps=$(ls /usr/share/kbd/keymaps/**/*.map.gz | grep -v "iso")
-keymap=$(dialog --stdout --menu "Select keymap" 0 0 0 $keymaps) || exit 1
+msg "${BLUE}Available keymaps:${NOFORMAT}"
+echo "$keymaps" | nl
+read -p "Enter keymap: " keymap
+[[ -n "$keymap" ]] || { echo "Keymap cannot be empty"; exit 1; }
 
 # 3. Disk partitioning
 
 # 3.1. Disk name
 devicelist=$(lsblk -dplnx size -o name,size | grep -Ev "boot|rpmb|loop" | tac)
-device=$(dialog --stdout --menu "Select installation disk" 0 0 0 $devicelist) || exit 1
-[[ -n "$device" ]] || { echo "No disk selected. Aborted."; exit 1; }
-clear
+msg "${BLUE}Select installation disk:${NOFORMAT}"
+select device in $devicelist; do
+  [[ -n "$device" ]] || { echo "No disk selected. Aborted."; exit 1; }
+  break
+done
 
 # 3.2. Partition the disks
-parted --script "$device" -- mklabel gpt \
-  mkpart ESP fat32 1Mib 512MiB \
+msg "${BLUE}Partitioning the disks...${NOFORMAT}"
+parted --script "$device" \
+  mklabel gpt \
+  mkpart ESP fat32 1MiB 513MiB \
   set 1 boot on \
-  mkpart primary linux-swap 512MiB 4GiB \
+  mkpart primary linux-swap 513MiB 4GiB \
   mkpart primary ext4 4GiB 100%
 
 # 3.3. Format the partitions
-part_boot="$(ls ${device}* | grep -E "^${device}p?1$")"
-part_swap="$(ls ${device}* | grep -E "^${device}p?2$")"
-part_root="$(ls ${device}* | grep -E "^${device}p?3$")"
+part_boot="${device}1"
+part_swap="${device}2"
+part_root="${device}3"
 
 wipefs "$part_boot"
 wipefs "$part_swap"
@@ -129,16 +128,13 @@ mount "$part_boot" /mnt/boot
 
 # 4. Install the base packages
 
-# 4.1. Reload the mirror list
-reflector --latest 200 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
-
-# 4.2. Enable parallel downloads
+# 4.1. Enable parallel downloads
 sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" /etc/pacman.conf
 
-# 4.3. Install base packages
+# 4.2. Install base packages
 pacstrap /mnt base base-devel linux linux-firmware nano networkmanager efibootmgr grub os-prober intel-ucode sudo git neofetch
 
-# 4.4. Generate fstab
+# 4.3. Generate fstab
 genfstab -U /mnt >> /mnt/etc/fstab
 
 # 5. Chroot
@@ -178,9 +174,5 @@ arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
 arch-chroot /mnt systemctl enable NetworkManager
 
 # 6. Cleanup and exit
-
-# 6.1. Unmount
 umount -R /mnt
-
-cleanup
 exit 0
