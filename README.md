@@ -17,6 +17,7 @@ exit
 3. Install dependencies.
   
 ```bash 
+pacman-key --init
 pacman -Sy --noconfirm --needed git
 ```
 
@@ -47,6 +48,12 @@ nmcli device wifi connect <SSID> password <password>
 
 - [Installation Guide - ArchWiki](https://wiki.archlinux.org/title/Installation_guide)
 - [Automating Arch Linux Part 3: Creating a Custom Arch Linux Installer | Disconnected Systems](https://disconnected.systems/blog/archlinux-installer/#setting-variables-and-collecting-user-input)
+
+## Roadmap
+
+- [ ] Successfully install Arch Linux
+- [ ] Move time consuming tasks to the end
+- [ ] Add option to install a desktop environment
 
 ## License
 
