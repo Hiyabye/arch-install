@@ -53,9 +53,10 @@ read -p "Enter hostname: " hostname
 msg
 
 # 2.2. Root password
-read -rps "Enter admin password: " root_password
+read -s -p "Enter admin password: " root_password
 [[ -n "$root_password" ]] || { echo "Admin password cannot be empty"; exit 1; }
-read -rps "Enter admin password again: " root_password2
+msg
+read -s -p "Enter admin password again: " root_password2
 [[ "$root_password" == "$root_password2" ]] || { echo "Passwords do not match"; exit 1; }
 msg
 
@@ -65,34 +66,21 @@ read -p "Enter username: " username
 msg
 
 # 2.4. User password
-read -rps "Enter user password: " user_password
+read -s -p "Enter user password: " user_password
 [[ -n "$user_password" ]] || { echo "User password cannot be empty"; exit 1; }
-read -rps "Enter user password again: " user_password2
+msg
+read -s -p "Enter user password again: " user_password2
 [[ "$user_password" == "$user_password2" ]] || { echo "Passwords do not match"; exit 1; }
 msg
 
 # 2.5. Timezone
-timezones=$(timedatectl list-timezones)
-msg "${BLUE}Available timezones:${NOFORMAT}"
-echo "$timezones" | nl
-read -p "Enter timezone: " timezone
+read -p "Enter timezone (e.g. Asia/Seoul): " timezone
 [[ -n "$timezone" ]] || { echo "Timezone cannot be empty"; exit 1; }
 msg
 
 # 2.6. Locale
-locales=$(cat /etc/locale.gen | grep -v "#")
-msg "${BLUE}Available locales:${NOFORMAT}"
-echo "$locales" | nl
-read -p "Enter locale: " locale
+read -p "Enter locale (e.g. en_US.UTF-8): " locale
 [[ -n "$locale" ]] || { echo "Locale cannot be empty"; exit 1; }
-msg
-
-# 2.7. Keymap
-keymaps=$(ls /usr/share/kbd/keymaps/**/*.map.gz | grep -v "iso")
-msg "${BLUE}Available keymaps:${NOFORMAT}"
-echo "$keymaps" | nl
-read -p "Enter keymap: " keymap
-[[ -n "$keymap" ]] || { echo "Keymap cannot be empty"; exit 1; }
 msg
 
 # 3. Disk partitioning
@@ -100,8 +88,17 @@ msg
 # 3.1. Disk name
 devicelist=$(lsblk -dplnx size -o name,size | grep -Ev "boot|rpmb|loop" | tac)
 msg "${BLUE}Select installation disk:${NOFORMAT}"
-select device in $devicelist; do
-  [[ -n "$device" ]] || { echo "No disk selected. Aborted."; exit 1; }
+
+options=()
+while read -r line; do
+  disk_name=$(echo "$line" | awk '{print $1}')
+  disk_size=$(echo "$line" | awk '{print $2}')
+  options+=("$disk_name $disk_size")
+done <<< "$devicelist"
+
+select device_option in "${options[@]}"; do
+  [[ -n "$device_option" ]] || { echo "Invalid option. Aborted."; exit 1; }
+  device=$(echo "$device_option" | awk '{print $1}')
   break
 done
 msg
@@ -171,7 +168,6 @@ msg "${BLUE}Configuring localization...${NOFORMAT}"
 arch-chroot /mnt sed -i "s/#$locale/$locale/" /etc/locale.gen
 arch-chroot /mnt locale-gen
 arch-chroot /mnt echo "LANG=$locale" > /etc/locale.conf
-arch-chroot /mnt echo "KEYMAP=$keymap" > /etc/vconsole.conf
 msg
 
 # 5.3. Network configuration
