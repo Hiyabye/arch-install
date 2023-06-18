@@ -185,7 +185,7 @@ echo
 # Network configuration
 echo -e "[13/19] ${BLUE}Configuring network...${NOFORMAT}"
 echo
-pacman -S --noconfirm networkmanager
+arch-chroot /mnt pacman -S --noconfirm networkmanager
 arch-chroot /mnt systemctl enable NetworkManager.service
 read -p "Enter the hostname: " hostname < /dev/tty
 echo "$hostname" > /mnt/etc/hostname
