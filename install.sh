@@ -26,11 +26,11 @@ echo
 # UEFI will have a directory named /sys/firmware/efi. If not, it's likely using BIOS
 echo -e "${BLUE}Verifying boot mode...${NOFORMAT}"
 echo
-ls /sys/firmware/efi/efivars
-echo
-if [ $? -eq 0 ]; then
+if [ -d /sys/firmware/efi ]; then
+  echo "Boot mode: UEFI"
   uefi=1
 else
+  echo "Boot mode: BIOS"
   uefi=0
 fi
 
@@ -44,17 +44,9 @@ echo
 devices=$(lsblk -dplnx size -o name,size | grep -Ev "boot|rpmb|loop" | tac)
 echo -e "${BLUE}Available disks:${NOFORMAT}"
 echo
-
-options=()
-while read -r line; do
-  mapfile -t -d ":" vals <<<"$line"
-  options+=("${vals[0]}" "${vals[1]}")
-done <<<"$devices"
-
-select device in "${options[@]}"; do
-  [[ -n "$device" ]] || { echo "Invalid choice"; continue; }
-  break
-done
+echo "$devices"
+echo
+read -p "Enter the target disk (e.g. /dev/sda): " device
 echo
 
 # Confirm the target disk(s)
