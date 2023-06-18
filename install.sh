@@ -57,14 +57,12 @@ echo
 echo -e "${BLUE}The following disk(s) will be wiped:${NOFORMAT}"
 echo
 echo "$device"
-echo
-read -p "Are you sure? [y/N] " confirm
+read -p "Are you sure? [y/N] " confirm < /dev/tty
 [[ "$confirm" == [yY] || "$confirm" == [yY][eE][sS] ]] || { echo "Aborted"; exit 1; }
 echo
 
 # Partition the disks
 echo -e "${BLUE}Partitioning disks...${NOFORMAT}"
-echo
 if [ $uefi -eq 1 ]; then
   # For UEFI system, create an EFI System Partition (ESP) and a root partition at minimum
   parted -s "$device" mklabel gpt \
@@ -84,10 +82,10 @@ echo
 if [ $uefi -eq 1 ]; then
   # For UEFI system, format the ESP as fat32 and the root partition as btrfs
   mkfs.vfat -F 32 "${device}1"
-  mkfs.btrfs "${device}2"
+  mkfs.btrfs -f "${device}2"
 else
   # For BIOS system, format the root partition as btrfs
-  mkfs.btrfs "${device}1"
+  mkfs.btrfs -f "${device}1"
 fi
 echo
 
