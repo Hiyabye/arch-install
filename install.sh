@@ -8,7 +8,9 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 
-# Part 1: Pre-installation
+##########################################
+######## Part 1: Pre-installation ########
+##########################################
 
 # Introduction
 echo
@@ -21,7 +23,7 @@ echo
 
 # Verify the boot mode
 # UEFI will have a directory named /sys/firmware/efi. If not, it's likely using BIOS
-echo -e "${BLUE}Verifying boot mode...${NOFORMAT}"
+echo -e "[1/19] ${BLUE}Verifying boot mode...${NOFORMAT}"
 echo
 if [ -d /sys/firmware/efi ]; then
   echo "Boot mode: UEFI"
@@ -33,8 +35,7 @@ fi
 echo
 
 # Update the system clock
-echo -e "${BLUE}Updating system clock...${NOFORMAT}"
-echo
+echo -e "[2/19] ${BLUE}Updating system clock...${NOFORMAT}"
 timedatectl set-ntp true
 echo
 
@@ -57,12 +58,13 @@ echo
 echo -e "${BLUE}The following disk(s) will be wiped:${NOFORMAT}"
 echo
 echo "$device"
+echo
 read -p "Are you sure? [y/N] " confirm < /dev/tty
 [[ "$confirm" == [yY] || "$confirm" == [yY][eE][sS] ]] || { echo "Aborted"; exit 1; }
 echo
 
 # Partition the disks
-echo -e "${BLUE}Partitioning disks...${NOFORMAT}"
+echo -e "[3/19] ${BLUE}Partitioning disks...${NOFORMAT}"
 if [ $uefi -eq 1 ]; then
   # For UEFI system, create an EFI System Partition (ESP) and a root partition at minimum
   parted -s "$device" mklabel gpt \
@@ -77,7 +79,7 @@ fi
 echo
 
 # Format the partitions
-echo -e "${BLUE}Formatting partitions...${NOFORMAT}"
+echo -e "[4/19] ${BLUE}Formatting partitions...${NOFORMAT}"
 echo
 if [ $uefi -eq 1 ]; then
   # For UEFI system, format the ESP as fat32 and the root partition as btrfs
@@ -90,7 +92,7 @@ fi
 echo
 
 # Create the Btrfs subvolumes
-echo -e "${BLUE}Creating Btrfs subvolumes...${NOFORMAT}"
+echo -e "[5/19] ${BLUE}Creating Btrfs subvolumes...${NOFORMAT}"
 echo
 if [ $uefi -eq 1 ]; then
   # For UEFI system, create subvolumes for root, home, and snapshots
@@ -109,10 +111,10 @@ else
   btrfs subvolume create /mnt/@snapshots
   umount /mnt
 fi
+echo
 
 # Mount the file systems
-echo -e "${BLUE}Mounting file systems...${NOFORMAT}"
-echo
+echo -e "[6/19] ${BLUE}Mounting file systems...${NOFORMAT}"
 if [ $uefi -eq 1 ]; then
   # For UEFI system, mount the root partition to /mnt and the ESP to /mnt/boot
   mount -o defaults,noatime,nodiratime,compress=zstd,discard=async,space_cache=v2,subvol=@ "${device}2" /mnt
@@ -131,43 +133,48 @@ else
 fi
 echo
 
-# Part 2: Installation
+######################################
+######## Part 2: Installation ########
+######################################
 
 # Select the mirrors
-echo -e "${BLUE}Selecting mirrors...${NOFORMAT}"
+echo -e "[7/19] ${BLUE}Selecting mirrors...${NOFORMAT}"
 echo
 pacman -Sy --noconfirm reflector
+echo
 reflector --verbose --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
 echo
 
 # Enable parallel downloads
-echo -e "${BLUE}Enabling parallel downloads...${NOFORMAT}"
+echo -e "[8/19] ${BLUE}Enabling parallel downloads...${NOFORMAT}"
 sed -i 's/#ParallelDownloads = 5/ParallelDownloads = 5/' /etc/pacman.conf
 echo
 
 # Install essential packages
-echo -e "${BLUE}Installing essential packages...${NOFORMAT}"
+echo -e "[9/19] ${BLUE}Installing essential packages...${NOFORMAT}"
 echo
 pacstrap -K /mnt base linux linux-firmware base-devel intel-ucode nano dosfstools btrfs-progs git
 echo
 
-# Part 3: Configuration
+#######################################
+######## Part 3: Configuration ########
+#######################################
 
 # Generate Fstab file
-echo -e "${BLUE}Generating fstab file...${NOFORMAT}"
+echo -e "[10/19] ${BLUE}Generating fstab file...${NOFORMAT}"
 genfstab -U /mnt >> /mnt/etc/fstab
 echo
 
 # Time zone
-echo -e "${BLUE}Configuring time zone...${NOFORMAT}"
+echo -e "[11/19] ${BLUE}Configuring time zone...${NOFORMAT}"
 echo
-read -p "Enter the time zone (Region/City): " timezone
+read -p "Enter the time zone (Region/City): " timezone < /dev/tty
 ln -sf "/mnt/usr/share/zoneinfo/$timezone" /mnt/etc/localtime
 arch-chroot /mnt hwclock --systohc
 echo
 
 # Localization
-echo -e "${BLUE}Configuring localization...${NOFORMAT}"
+echo -e "[12/19] ${BLUE}Configuring localization...${NOFORMAT}"
 echo
 sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /mnt/etc/locale.gen
 arch-chroot /mnt locale-gen
@@ -176,11 +183,11 @@ echo "KEYMAP=us" >> /mnt/etc/vconsole.conf
 echo
 
 # Network configuration
-echo -e "${BLUE}Configuring network...${NOFORMAT}"
+echo -e "[13/19] ${BLUE}Configuring network...${NOFORMAT}"
 echo
 pacman -S --noconfirm networkmanager
-arch-chroot /mnt systemctl enable NetworkManager
-read -p "Enter the hostname: " hostname
+arch-chroot /mnt systemctl enable NetworkManager.service
+read -p "Enter the hostname: " hostname < /dev/tty
 echo "$hostname" > /mnt/etc/hostname
 cat <<EOF > /mnt/etc/hosts
 127.0.0.1 localhost
@@ -190,18 +197,18 @@ EOF
 echo
 
 # Initramfs
-echo -e "${BLUE}Creating initramfs...${NOFORMAT}"
+echo -e "[14/19] ${BLUE}Creating initramfs...${NOFORMAT}"
 echo
 sed -i 's/^HOOKS.*/HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block filesystems fsck btrfs)/' /mnt/etc/mkinitcpio.conf
 arch-chroot /mnt mkinitcpio -P
 echo
 
 # Root password
-echo -e "${BLUE}Configuring root password...${NOFORMAT}"
+echo -e "[15/19] ${BLUE}Configuring root...${NOFORMAT}"
 echo
-read -s -p "Enter the root password: " root_password
+read -s -p "Enter the root password: " root_password < /dev/tty
 echo
-read -s -p "Confirm the root password: " root_password_confirm
+read -s -p "Confirm the root password: " root_password_confirm < /dev/tty
 echo
 if [ "$root_password" != "$root_password_confirm" ]; then
   echo -e "${RED}Passwords do not match${NOFORMAT}"
@@ -211,13 +218,13 @@ arch-chroot /mnt echo "root:$root_password" | chpasswd
 echo
 
 # Create a new user
-echo -e "${BLUE}Creating a new user...${NOFORMAT}"
+echo -e "[16/19] ${BLUE}Creating a new user...${NOFORMAT}"
 echo
-read -p "Enter the username: " username
+read -p "Enter the username: " username < /dev/tty
 arch-chroot /mnt useradd -mG wheel -s /bin/bash "$username"
-read -s -p "Enter the password for $username: " user_password
+read -s -p "Enter the password for $username: " user_password < /dev/tty
 echo
-read -s -p "Confirm the password for $username: " user_password_confirm
+read -s -p "Confirm the password for $username: " user_password_confirm < /dev/tty
 echo
 if [ "$user_password" != "$user_password_confirm" ]; then
   echo -e "${RED}Passwords do not match${NOFORMAT}"
@@ -227,14 +234,14 @@ arch-chroot /mnt echo "username:password" | chpasswd
 echo
 
 # Sudoers
-echo -e "${BLUE}Configuring sudoers...${NOFORMAT}"
+echo -e "[17/19] ${BLUE}Configuring sudoers...${NOFORMAT}"
 echo
 pacman -S --noconfirm sudo
 arch-chroot /mnt sed -i "s/# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/" /etc/sudoers
 echo
 
 # Install and configure systemd-boot
-echo -e "${BLUE}Installing and configuring systemd-boot...${NOFORMAT}"
+echo -e "[18/19] ${BLUE}Installing and configuring systemd-boot...${NOFORMAT}"
 echo
 arch-chroot /mnt bootctl --path=/boot install
 arch-chroot /mnt cat <<EOF > /boot/loader/loader.conf
@@ -262,10 +269,12 @@ EOF
 fi
 echo
 
-# Part 4: Finalize
+##################################
+######## Part 4: Finalize ########
+##################################
 
 # Unmount
-echo -e "${BLUE}Unmounting...${NOFORMAT}"
+echo -e "[19/19] ${BLUE}Unmounting...${NOFORMAT}"
 umount -R /mnt
 echo
 
