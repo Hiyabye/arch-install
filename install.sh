@@ -11,196 +11,242 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 
-# Function to print messages with color
-msg() {
-  echo >&2 -e "${1-}"
-}
+# Part 1: Pre-installation
 
-# 0. Introduction
-msg
-msg "${BLUE}Welcome to Arch Linux Installer!${NOFORMAT}"
-msg
-msg "${YELLOW}WARNING: This script will remove all existing data on the disk${NOFORMAT}"
-msg "${YELLOW}WARNING: This script is experimental and is not verified${NOFORMAT}"
-msg "${YELLOW}WARNING: This script is not intended for use in production${NOFORMAT}"
-msg
+# Introduction
+echo
+echo -e "${BLUE}Welcome to Arch Linux Installer!${NOFORMAT}"
+echo
+echo -e "${YELLOW}WARNING: This script will remove all existing data on the disk${NOFORMAT}"
+echo -e "${YELLOW}WARNING: This script is experimental and is not verified${NOFORMAT}"
+echo -e "${YELLOW}WARNING: This script is not intended for use in production${NOFORMAT}"
+echo
 
-# 1. Prepare environment
+# Verify the boot mode
+# UEFI will have a directory named /sys/firmware/efi. If not, it's likely using BIOS
+echo -e "${BLUE}Verifying boot mode...${NOFORMAT}"
+echo
+ls /sys/firmware/efi/efivars
+echo
+if [ $? -eq 0 ]; then
+  uefi=1
+else
+  uefi=0
+fi
 
-# 1.1. Update system clock
-msg "${BLUE}Updating system clock...${NOFORMAT}"
-msg
+# Update the system clock
+echo -e "${BLUE}Updating system clock...${NOFORMAT}"
+echo
 timedatectl set-ntp true
-msg
+echo
 
-# 1.2. Install dependencies
-msg "${BLUE}Installing dependencies...${NOFORMAT}"
-msg
-pacman -Sy --noconfirm --needed reflector
-msg
-
-# 1.3. Update mirror list
-msg "${BLUE}Updating mirror list... This might take a while...${NOFORMAT}"
-msg
-reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
-msg
-
-# 2. User credentials
-
-# 2.1. Hostname
-read -p "Enter hostname: " hostname
-[[ -n "$hostname" ]] || { echo "Hostname cannot be empty"; exit 1; }
-msg
-
-# 2.2. Root password
-read -s -p "Enter admin password: " root_password
-[[ -n "$root_password" ]] || { echo "Admin password cannot be empty"; exit 1; }
-msg
-read -s -p "Enter admin password again: " root_password2
-[[ "$root_password" == "$root_password2" ]] || { echo "Passwords do not match"; exit 1; }
-msg
-
-# 2.3. Username
-read -p "Enter username: " username
-[[ -n "$username" ]] || { echo "Username cannot be empty"; exit 1; }
-msg
-
-# 2.4. User password
-read -s -p "Enter user password: " user_password
-[[ -n "$user_password" ]] || { echo "User password cannot be empty"; exit 1; }
-msg
-read -s -p "Enter user password again: " user_password2
-[[ "$user_password" == "$user_password2" ]] || { echo "Passwords do not match"; exit 1; }
-msg
-
-# 2.5. Timezone
-read -p "Enter timezone (e.g. Asia/Seoul): " timezone
-[[ -n "$timezone" ]] || { echo "Timezone cannot be empty"; exit 1; }
-msg
-
-# 2.6. Locale
-read -p "Enter locale (e.g. en_US.UTF-8): " locale
-[[ -n "$locale" ]] || { echo "Locale cannot be empty"; exit 1; }
-msg
-
-# 3. Disk partitioning
-
-# 3.1. Disk name
-devicelist=$(lsblk -dplnx size -o name,size | grep -Ev "boot|rpmb|loop" | tac)
-msg "${BLUE}Select installation disk:${NOFORMAT}"
+# Identify the target disk(s)
+devices=$(lsblk -dplnx size -o name,size | grep -Ev "boot|rpmb|loop" | tac)
+echo -e "${BLUE}Available disks:${NOFORMAT}"
+echo
 
 options=()
 while read -r line; do
-  disk_name=$(echo "$line" | awk '{print $1}')
-  disk_size=$(echo "$line" | awk '{print $2}')
-  options+=("$disk_name $disk_size")
-done <<< "$devicelist"
+  mapfile -t -d ":" vals <<<"$line"
+  options+=("${vals[0]}" "${vals[1]}")
+done <<<"$devices"
 
-select device_option in "${options[@]}"; do
-  [[ -n "$device_option" ]] || { echo "Invalid option. Aborted."; exit 1; }
-  device=$(echo "$device_option" | awk '{print $1}')
+select device in "${options[@]}"; do
+  [[ -n "$device" ]] || { echo "Invalid choice"; continue; }
   break
 done
-msg
+echo
 
-# 3.2. Partition the disks
-msg "${BLUE}Partitioning the disks...${NOFORMAT}"
-parted --script "$device" \
-  mklabel gpt \
-  mkpart ESP fat32 1MiB 513MiB \
-  set 1 boot on \
-  mkpart primary linux-swap 513MiB 4GiB \
-  mkpart primary ext4 4GiB 100%
-msg
+# Confirm the target disk(s)
+echo -e "${BLUE}The following disk(s) will be wiped:${NOFORMAT}"
+echo
+echo "$device"
+echo
+read -p "Are you sure? [y/N] " confirm
+[[ "$confirm" == [yY] || "$confirm" == [yY][eE][sS] ]] || { echo "Aborted"; exit 1; }
+echo
 
-# 3.3. Format the partitions
-part_boot="${device}1"
-part_swap="${device}2"
-part_root="${device}3"
+# Partition the disks
+echo -e "${BLUE}Partitioning disks...${NOFORMAT}"
+echo
+if [ $uefi -eq 1 ]; then
+  # For UEFI system, create an EFI System Partition (ESP) and a root partition at minimum
+  parted -s "$device" mklabel gpt \
+    mkpart ESP fat32 1MiB 513MiB \
+    set 1 boot on \
+    mkpart primary ext4 513MiB 100%
+else
+  # For BIOS system, create a root partition only
+  parted -s "$device" mklabel msdos \
+    mkpart primary ext4 1MiB 100%
+fi
+echo
 
-msg "${BLUE}Formatting the partitions...${NOFORMAT}"
-wipefs "$part_boot"
-wipefs "$part_swap"
-wipefs "$part_root"
-msg
+# Format the partitions
+echo -e "${BLUE}Formatting partitions...${NOFORMAT}"
+echo
+if [ $uefi -eq 1 ]; then
+  # For UEFI system, format the ESP as fat32 and the root partition as ext4
+  mkfs.vfat -F 32 "${device}1"
+  mkfs.ext4 "${device}2"
+else
+  # For BIOS system, format the root partition as ext4
+  mkfs.ext4 "${device}1"
+fi
+echo
 
-msg "${BLUE}Creating file systems...${NOFORMAT}"
-mkfs.vfat -F32 "$part_boot"
-mkswap "$part_swap"
-mkfs.ext4 "$part_root"
-msg
+# Mount the file systems
+echo -e "${BLUE}Mounting file systems...${NOFORMAT}"
+echo
+if [ $uefi -eq 1 ]; then
+  # For UEFI system, mount the root partition to /mnt and the ESP to /mnt/boot
+  mount "${device}2" /mnt
+  mkdir -p /mnt/boot
+  mount "${device}1" /mnt/boot
+else
+  # For BIOS system, mount the root partition to /mnt
+  mount "${device}1" /mnt
+fi
+echo
 
-# 3.4. Mount the file systems
-msg "${BLUE}Mounting the file systems...${NOFORMAT}"
-swapon "$part_swap"
-mount "$part_root" /mnt
-mkdir /mnt/boot
-mount "$part_boot" /mnt/boot
-msg
+# Part 2: Installation
 
-# 4. Install the base packages
+# Select the mirrors
+echo -e "${BLUE}Selecting mirrors...${NOFORMAT}"
+echo
+pacman -Sy --noconfirm reflector
+reflector --verbose --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+echo
 
-# 4.1. Enable parallel downloads
-msg "${BLUE}Enabling parallel downloads...${NOFORMAT}"
-sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" /etc/pacman.conf
-msg
+# Enable parallel downloads
+echo -e "${BLUE}Enabling parallel downloads...${NOFORMAT}"
+echo
+sed -i 's/#ParallelDownloads = 5/ParallelDownloads = 5/' /etc/pacman.conf
+echo
 
-# 4.2. Install base packages
-msg "${BLUE}Installing base packages...${NOFORMAT}"
-pacstrap /mnt base base-devel linux linux-firmware nano networkmanager efibootmgr grub os-prober intel-ucode sudo git neofetch
-msg
+# Install essential packages
+echo -e "${BLUE}Installing essential packages...${NOFORMAT}"
+echo
+pacstrap /mnt base linux linux-firmware base-devel intel-ucode nano btrfs-progs git
+echo
 
-# 4.3. Generate fstab
-msg "${BLUE}Generating fstab...${NOFORMAT}"
+# Part 3: Configuration
+
+# Generate Fstab file
+echo -e "${BLUE}Generating fstab file...${NOFORMAT}"
+echo
 genfstab -U /mnt >> /mnt/etc/fstab
-msg
+echo
 
-# 5. Chroot
-
-# 5.1. Time zone
-msg "${BLUE}Configuring time zone...${NOFORMAT}"
-arch-chroot /mnt ln -sf /usr/share/zoneinfo/$timezone /etc/localtime
+# Time zone
+echo -e "${BLUE}Configuring time zone...${NOFORMAT}"
+echo
+read -p "Enter the time zone (Region/City): " timezone
+arch-chroot /mnt ln -sf "/usr/share/zoneinfo/$timezone" /mnt/etc/localtime
 arch-chroot /mnt hwclock --systohc
-msg
+echo
 
-# 5.2. Localization
-msg "${BLUE}Configuring localization...${NOFORMAT}"
-arch-chroot /mnt sed -i "s/#$locale/$locale/" /etc/locale.gen
+# Localization
+echo -e "${BLUE}Configuring localization...${NOFORMAT}"
+echo
+arch-chroot /mnt sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /mnt/etc/locale.gen
 arch-chroot /mnt locale-gen
-arch-chroot /mnt echo "LANG=$locale" > /etc/locale.conf
-msg
+echo "LANG=en_US.UTF-8" >> /mnt/etc/locale.conf
+echo "KEYMAP=us" >> /mnt/etc/vconsole.conf
+echo
 
-# 5.3. Network configuration
-msg "${BLUE}Configuring network...${NOFORMAT}"
-arch-chroot /mnt echo "$hostname" > /etc/hostname
+# Network configuration
+echo -e "${BLUE}Configuring network...${NOFORMAT}"
+echo
+pacman -S --noconfirm networkmanager
 arch-chroot /mnt systemctl enable NetworkManager
-msg
+read -p "Enter the hostname: " hostname
+echo "$hostname" > /mnt/etc/hostname
+arch-chroot /mnt cat <<EOF > /mnt/etc/hosts
+127.0.0.1 localhost
+::1 localhost
+127.0.1.1 $hostname.localdomain $hostname
+EOF
+echo
 
-# 5.4. Generate initramfs
-msg "${BLUE}Generating initramfs...${NOFORMAT}"
+# Initramfs
+echo -e "${BLUE}Creating initramfs...${NOFORMAT}"
+echo
 arch-chroot /mnt mkinitcpio -P
-msg
+echo
 
-# 5.5. Root password
+# Root password
+echo -e "${BLUE}Configuring root password...${NOFORMAT}"
+echo
+read -s -p "Enter the root password: " root_password
+echo
+read -s -p "Confirm the root password: " root_password_confirm
+echo
+if [ "$root_password" != "$root_password_confirm" ]; then
+  echo -e "${RED}Passwords do not match${NOFORMAT}"
+  exit 1
+fi
 arch-chroot /mnt echo "root:$root_password" | chpasswd
+echo
 
-# 5.6. Create user
+# Create a new user
+echo -e "${BLUE}Creating a new user...${NOFORMAT}"
+echo
+read -p "Enter the username: " username
 arch-chroot /mnt useradd -mG wheel -s /bin/bash "$username"
-arch-chroot /mnt echo "$username:$user_password" | chpasswd
+read -s -p "Enter the password for $username: " user_password
+echo
+read -s -p "Confirm the password for $username: " user_password_confirm
+echo
+if [ "$user_password" != "$user_password_confirm" ]; then
+  echo -e "${RED}Passwords do not match${NOFORMAT}"
+  exit 1
+fi
+arch-chroot /mnt echo "username:password" | chpasswd
+echo
 
-# 5.7. Sudo
-msg "${BLUE}Configuring sudo...${NOFORMAT}"
+# Sudoers
+echo -e "${BLUE}Configuring sudoers...${NOFORMAT}"
+echo
+pacman -S --noconfirm sudo
 arch-chroot /mnt sed -i "s/# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/" /etc/sudoers
-msg
+echo
 
-# 5.8. Grub
-msg "${BLUE}Configuring grub...${NOFORMAT}"
-arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-sed -i "s/GRUB_TIMEOUT=5/GRUB_TIMEOUT=1/" /mnt/etc/default/grub
-arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
-msg
+# Install and configure systemd-boot
+echo -e "${BLUE}Installing and configuring systemd-boot...${NOFORMAT}"
+echo
+arch-chroot /mnt bootctl --path=/boot install
+arch-chroot /mnt cat <<EOF > /boot/loader/loader.conf
+default arch
+timeout 1
+console-mode max
+editor no
+EOF
+if [ $uefi -eq 1 ]; then
+  arch-chroot /mnt cat <<EOF > /boot/loader/entries/arch.conf
+  title Arch Linux
+  linux /vmlinuz-linux
+  initrd /intel-ucode.img
+  initrd /initramfs-linux.img
+  options root=PARTUUID=$(blkid -s PARTUUID -o value "${device}2") rw
+EOF
+else
+  arch-chroot /mnt cat <<EOF > /boot/loader/entries/arch.conf
+  title Arch Linux
+  linux /vmlinuz-linux
+  initrd /intel-ucode.img
+  initrd /initramfs-linux.img
+  options root=PARTUUID=$(blkid -s PARTUUID -o value "${device}1") rw
+EOF
+fi
+echo
 
-# 6. Cleanup and exit
-msg "${BLUE}Cleanup and exit...${NOFORMAT}"
+# Part 4: Finalize
+
+# Unmount
+echo -e "${BLUE}Unmounting...${NOFORMAT}"
 umount -R /mnt
-exit 0
+echo
+
+echo -e "${GREEN}Done! You can now reboot.${NOFORMAT}"
+echo -e "${GREEN}Don't forget to remove the installation media.${NOFORMAT}"

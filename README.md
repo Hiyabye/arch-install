@@ -4,7 +4,7 @@
 
 1. Boot into the Arch Linux live environment.
 
-2. Connect to the internet.
+2. Connect to the internet using iwctl.
 
 ```bash
 iwctl
@@ -14,34 +14,29 @@ station wlan0 connect <SSID>
 exit
 ```
 
-3. Install dependencies.
-  
-```bash 
-pacman-key --init
-pacman -Sy --noconfirm --needed git
-```
-
-4. Download and run the `install.sh` script.
+3. Download and run the script.
 
 ```bash
-git clone https://github.com/Hiyabye/arch-install.git
-cd arch-install
-chmod +x install.sh
-./install.sh
+curl -sL https://raw.githubusercontent.com/Hiyabye/arch-install/main/install.sh | bash
 ```
 
-5. After the script finishes, reboot the system.
+4. After the script finishes, shut down the system.
 
 ```bash
 shutdown now
 ```
 
-6. Remove the installation media and boot into the new system.
+5. Remove the installation media and boot into the new system.
+After logging in as the new user, connect to the internet using nmcli.
 
 ```bash
-# After logging in as the new user
-# Connect to a network
 nmcli device wifi connect <SSID> password <password>
+```
+
+6. Run the post-install script.
+
+```bash
+curl -sL https://raw.githubusercontent.com/Hiyabye/arch-install/main/post-install.sh | bash
 ```
 
 ## References
