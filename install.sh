@@ -33,6 +33,7 @@ else
   echo "Boot mode: BIOS"
   uefi=0
 fi
+echo
 
 # Update the system clock
 echo -e "${BLUE}Updating system clock...${NOFORMAT}"
@@ -47,6 +48,10 @@ echo
 echo "$devices"
 echo
 read -p "Enter the target disk (e.g. /dev/sda): " device
+if ! [[ "$devices" =~ (^|[[:space:]])"$device"($|[[:space:]]) ]]; then
+  echo -e "${RED}Error: Invalid disk${NOFORMAT}"
+  exit 1
+fi
 echo
 
 # Confirm the target disk(s)
