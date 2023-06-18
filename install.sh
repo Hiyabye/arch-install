@@ -47,11 +47,13 @@ echo -e "${BLUE}Available disks:${NOFORMAT}"
 echo
 echo "$devices"
 echo
-read -p "Enter the target disk (e.g. /dev/sda): " device
-if ! [[ "$devices" =~ (^|[[:space:]])"$device"($|[[:space:]]) ]]; then
-  echo -e "${RED}Error: Invalid disk${NOFORMAT}"
-  exit 1
-fi
+select device in $devices; do
+  if [ -n "$device" ]; then
+    break
+  else
+    echo "Invalid selection"
+  fi
+done
 echo
 
 # Confirm the target disk(s)
