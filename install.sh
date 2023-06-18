@@ -53,7 +53,7 @@ select device in $devices; do
   else
     echo "Invalid selection"
   fi
-done < dev/tty
+done < /dev/tty
 echo
 
 # Confirm the target disk(s)
