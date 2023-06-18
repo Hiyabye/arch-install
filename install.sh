@@ -140,8 +140,6 @@ echo
 # Select the mirrors
 echo -e "[7/18] ${BLUE}Selecting mirrors...${NOFORMAT}"
 echo
-pacman -Sy --noconfirm reflector
-echo
 reflector --verbose --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
 echo
 
