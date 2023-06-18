@@ -39,7 +39,7 @@ timedatectl set-ntp true
 echo
 
 # Identify the target disk(s)
-devices=$(lsblk -dplnx -o name | grep -Ev "boot|rpmb|loop" | tac)
+devices=$(lsblk -dplnx size -o name | grep -Ev "boot|rpmb|loop" | tac)
 echo -e "${BLUE}Available disks:${NOFORMAT}"
 echo
 echo "$devices"
